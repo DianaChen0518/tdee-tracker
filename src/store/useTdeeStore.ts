@@ -10,7 +10,6 @@ export const getLocalYYYYMMDD = (d: Date) => {
 };
 
 export const useTdeeStore = defineStore('tdee', () => {
-  // 1. 修改 key 并清空默认数据，保护隐私
   const userProfile = useStorage<UserProfile>('tdee_user_v2', {
     birthDate: '', 
     heightCm: 0,
@@ -27,14 +26,13 @@ export const useTdeeStore = defineStore('tdee', () => {
 
   const selectedDate = ref(getLocalYYYYMMDD(new Date()));
 
-  // 2. 增加计算属性：判断用户是否已经配置过真实数据
   const isConfigured = computed(() => {
     return userProfile.value.birthDate !== '' && userProfile.value.heightCm > 0;
   });
 
   const activeDay = computed((): DayData => {
     if (!database.value[selectedDate.value]) {
-      let defaultWeight = 0; // 默认体重也置空，第一次必须手填
+      let defaultWeight = 0;
       const pastDates = Object.keys(database.value).filter(d => d < selectedDate.value).sort();
       if (pastDates.length > 0) {
         defaultWeight = database.value[pastDates[pastDates.length - 1]].weight;
@@ -62,10 +60,15 @@ export const useTdeeStore = defineStore('tdee', () => {
   
   const goToToday = () => selectedDate.value = getLocalYYYYMMDD(new Date());
 
+  // 新增：清空当前选定日期的数据
+  const clearDayData = () => {
+    database.value[selectedDate.value] = { weight: 0, steps: 0, workouts: [], foods: [] };
+  };
+
   return {
     userProfile, database, commonFoods, selectedDate, activeDay,
-    isConfigured, // 导出这个状态供界面使用
+    isConfigured, 
     age, bmr, baseCalories, stepCalories, workoutCalories, tdee, totalConsumed, dailyDeficit,
-    changeDate, goToToday
+    changeDate, goToToday, clearDayData
   };
 });
