@@ -2,15 +2,16 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { useTdeeStore, getLocalYYYYMMDD } from './store/useTdeeStore';
 import SettingsModal from './components/SettingsModal.vue';
+import MonthlyAuditModal from './components/MonthlyAuditModal.vue';
 import * as XLSX from 'xlsx';
 import { useDark, useToggle } from '@vueuse/core';
 
-// 主题切换控制：自动读取系统偏好，并记忆手动切换选择
 const isDark = useDark();
 const toggleDark = useToggle(isDark);
 
 const store = useTdeeStore();
 const showSettings = ref(false);
+const showAudit = ref(false); // 新增：月度审计弹窗状态
 
 onMounted(() => { if (!store.isConfigured) showSettings.value = true; });
 watch(() => store.isConfigured, (configured) => { if (!configured) showSettings.value = true; });
@@ -36,15 +37,12 @@ const saveQuickFood = () => {
   }
 };
 
-// 【新增】交互式保存动画提示
 const showSaveToast = ref(false);
 const handleSave = () => {
-  // 数据实际上一直是实时保存的，这里做一个 UX 视觉反馈让用户安心
   showSaveToast.value = true;
   setTimeout(() => { showSaveToast.value = false; }, 2000);
 };
 
-// 【新增】清空数据保护机制
 const handleDelete = () => {
   if (confirm(`⚠️ 危险操作：\n确定要清空 ${store.selectedDate} 这天的所有数据吗？\n此操作不可逆！`)) {
     store.clearDayData();
@@ -79,11 +77,10 @@ const exportToExcel = () => {
 </script>
 
 <template>
-  <div class="p-4 md:p-6 flex justify-center w-full min-h-screen transition-colors duration-300">
+  <div class="p-4 md:p-6 flex justify-center w-full min-h-screen transition-colors duration-300 relative">
     
-    <!-- 顶部保存成功提示框 (Toast) -->
     <transition enter-active-class="transition ease-out duration-300 transform" enter-from-class="-translate-y-10 opacity-0" enter-to-class="translate-y-0 opacity-100" leave-active-class="transition ease-in duration-200" leave-from-class="opacity-100" leave-to-class="opacity-0">
-      <div v-if="showSaveToast" class="fixed top-6 left-1/2 transform -translate-x-1/2 z-50 bg-green-500 text-white px-6 py-3 rounded-full shadow-lg font-bold flex items-center gap-2">
+      <div v-if="showSaveToast" class="fixed top-6 left-1/2 transform -translate-x-1/2 z-40 bg-green-500 text-white px-6 py-3 rounded-full shadow-lg font-bold flex items-center gap-2">
         ✅ <span>已安全保存 {{ store.selectedDate }} 的数据到本地</span>
       </div>
     </transition>
@@ -92,8 +89,9 @@ const exportToExcel = () => {
       
       <!-- 头部栏 -->
       <div class="flex flex-col md:flex-row justify-between items-center mb-6 bg-white dark:bg-[#1e1e1e] p-4 rounded-2xl border border-gray-200 dark:border-[#333] shadow-sm transition-colors">
-        <h1 class="text-xl font-bold flex items-center gap-3 mb-4 md:mb-0 text-gray-800 dark:text-white">
+        <h1 class="text-xl font-bold flex flex-wrap items-center gap-2 mb-4 md:mb-0 text-gray-800 dark:text-white">
           📅 科学 TDEE 管理
+          <button @click="showAudit = true" class="text-sm bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/40 dark:hover:bg-blue-800/60 text-blue-700 dark:text-blue-300 px-3 py-1.5 rounded-lg transition-colors ml-1 font-bold">📊 报表</button>
           <button @click="showSettings = true" class="text-sm bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-white px-3 py-1.5 rounded-lg transition-colors">⚙️ 设置</button>
           <button @click="toggleDark()" class="text-sm bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-white px-3 py-1.5 rounded-lg transition-colors">
             {{ isDark ? '☀️ 白天' : '🌙 黑夜' }}
@@ -126,7 +124,6 @@ const exportToExcel = () => {
             </div>
           </div>
 
-          <!-- 运动模块 -->
           <div class="bg-white dark:bg-[#1e1e1e] p-6 rounded-2xl border border-gray-200 dark:border-[#333] shadow-sm flex-1 flex flex-col transition-colors">
             <div class="flex justify-between items-center mb-4 shrink-0">
               <h2 class="text-lg font-bold text-gray-800 dark:text-white">🏋️ 运动记录</h2>
@@ -166,7 +163,10 @@ const exportToExcel = () => {
             <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">快捷食物库：</p>
             <div class="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto custom-scrollbar pr-1">
               <div v-for="(f, i) in store.commonFoods" :key="i" class="flex items-center bg-gray-100 dark:bg-[#2c2c2c] border border-gray-300 dark:border-[#444] rounded-full overflow-hidden transition-colors">
-                <button @click="store.activeDay.foods.push({name: f.name, cals: f.cals})" class="text-xs px-2.5 py-1 hover:bg-gray-200 dark:hover:bg-[#3c3c3c] text-gray-700 dark:text-gray-200 transition-colors">{{ f.name }} ({{ Math.round(f.cals) }})</button>
+                <!-- 修复：补上了 kcal 单位 -->
+                <button @click="store.activeDay.foods.push({name: f.name, cals: f.cals})" class="text-xs px-2.5 py-1 hover:bg-gray-200 dark:hover:bg-[#3c3c3c] text-gray-700 dark:text-gray-200 transition-colors">
+                  {{ f.name }} ({{ Math.round(f.cals) }} kcal)
+                </button>
                 <button @click="store.commonFoods.splice(i,1)" class="px-2 py-1 text-gray-400 dark:text-gray-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 text-xs border-l border-gray-300 dark:border-[#444] transition-colors">✕</button>
               </div>
             </div>
@@ -211,19 +211,15 @@ const exportToExcel = () => {
             </div>
           </div>
 
-          <!-- 操作按钮组 -->
           <div class="bg-white dark:bg-[#1e1e1e] p-5 rounded-2xl border border-gray-200 dark:border-[#333] shadow-sm shrink-0 flex flex-col gap-3 transition-colors">
             <div class="flex gap-3">
-              <!-- 保存按钮 -->
               <button @click="handleSave" class="flex-1 bg-green-600 hover:bg-green-500 text-white py-2.5 rounded-lg text-sm font-bold shadow-md transition-colors flex items-center justify-center gap-1">
                 💾 保存当日
               </button>
-              <!-- 删除按钮 -->
               <button @click="handleDelete" class="flex-1 bg-red-600/10 hover:bg-red-600/20 text-red-600 dark:text-red-400 py-2.5 rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-1">
                 🗑️ 清空重置
               </button>
             </div>
-            <!-- 导出按钮 -->
             <button @click="exportToExcel" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-lg text-sm font-bold shadow-md transition-colors flex items-center justify-center gap-2">
               📊 导出全部历史记录为 Excel
             </button>
@@ -233,6 +229,8 @@ const exportToExcel = () => {
       </div>
     </div>
     
+    <!-- 弹窗组件 -->
     <SettingsModal v-if="showSettings" @close="showSettings = false" />
+    <MonthlyAuditModal v-if="showAudit" @close="showAudit = false" />
   </div>
 </template>
