@@ -4,18 +4,16 @@ import { useStorage } from '@vueuse/core';
 import { UserProfile, Database, DayData, Food } from '../types';
 import { calculateAge, calcBMR, calcNEAT, calcEAT } from '../utils/formulas';
 
-// 获取本地 YYYY-MM-DD
 export const getLocalYYYYMMDD = (d: Date) => {
   const tzOffset = d.getTimezoneOffset() * 60000;
   return new Date(d.getTime() - tzOffset).toISOString().split('T')[0];
 };
 
 export const useTdeeStore = defineStore('tdee', () => {
-  // --- 状态 ---
-  // 完美的数据持久化，自动监听变化存入 LocalStorage，不用手动 stringify
-  const userProfile = useStorage<UserProfile>('tdee_user', {
-    birthDate: '2005-11-18',
-    heightCm: 173,
+  // 1. 修改 key 并清空默认数据，保护隐私
+  const userProfile = useStorage<UserProfile>('tdee_user_v2', {
+    birthDate: '', 
+    heightCm: 0,
     gender: 'M'
   });
 
@@ -29,11 +27,14 @@ export const useTdeeStore = defineStore('tdee', () => {
 
   const selectedDate = ref(getLocalYYYYMMDD(new Date()));
 
-  // --- 核心逻辑 ---
+  // 2. 增加计算属性：判断用户是否已经配置过真实数据
+  const isConfigured = computed(() => {
+    return userProfile.value.birthDate !== '' && userProfile.value.heightCm > 0;
+  });
+
   const activeDay = computed((): DayData => {
     if (!database.value[selectedDate.value]) {
-      // 智能继承体重
-      let defaultWeight = 70;
+      let defaultWeight = 0; // 默认体重也置空，第一次必须手填
       const pastDates = Object.keys(database.value).filter(d => d < selectedDate.value).sort();
       if (pastDates.length > 0) {
         defaultWeight = database.value[pastDates[pastDates.length - 1]].weight;
@@ -45,7 +46,6 @@ export const useTdeeStore = defineStore('tdee', () => {
 
   const age = computed(() => calculateAge(userProfile.value.birthDate));
   
-  // 当日各项指标 (调用纯函数，拒绝重复代码)
   const bmr = computed(() => calcBMR(activeDay.value.weight, userProfile.value.heightCm, age.value, userProfile.value.gender));
   const baseCalories = computed(() => bmr.value * 1.1);
   const stepCalories = computed(() => calcNEAT(activeDay.value.weight, activeDay.value.steps));
@@ -54,7 +54,6 @@ export const useTdeeStore = defineStore('tdee', () => {
   const totalConsumed = computed(() => activeDay.value.foods.reduce((sum, f) => sum + f.cals, 0));
   const dailyDeficit = computed(() => tdee.value - totalConsumed.value);
 
-  // --- 方法 ---
   const changeDate = (days: number) => {
     const d = new Date(selectedDate.value);
     d.setDate(d.getDate() + days);
@@ -65,6 +64,7 @@ export const useTdeeStore = defineStore('tdee', () => {
 
   return {
     userProfile, database, commonFoods, selectedDate, activeDay,
+    isConfigured, // 导出这个状态供界面使用
     age, bmr, baseCalories, stepCalories, workoutCalories, tdee, totalConsumed, dailyDeficit,
     changeDate, goToToday
   };
