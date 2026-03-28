@@ -1,0 +1,71 @@
+import { defineStore } from 'pinia';
+import { ref, computed } from 'vue';
+import { useStorage } from '@vueuse/core';
+import { UserProfile, Database, DayData, Food } from '../types';
+import { calculateAge, calcBMR, calcNEAT, calcEAT } from '../utils/formulas';
+
+// 获取本地 YYYY-MM-DD
+export const getLocalYYYYMMDD = (d: Date) => {
+  const tzOffset = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - tzOffset).toISOString().split('T')[0];
+};
+
+export const useTdeeStore = defineStore('tdee', () => {
+  // --- 状态 ---
+  // 完美的数据持久化，自动监听变化存入 LocalStorage，不用手动 stringify
+  const userProfile = useStorage<UserProfile>('tdee_user', {
+    birthDate: '2005-11-18',
+    heightCm: 173,
+    gender: 'M'
+  });
+
+  const database = useStorage<Database>('tdee_db_v2', {});
+  const commonFoods = useStorage<Food[]>('tdee_foods_v2', [
+    { name: '生鸡胸肉 (100g)', cals: 133 },
+    { name: '熟米饭 (100g)', cals: 116 },
+    { name: '水煮蛋 (1个)', cals: 75 },
+    { name: '黑咖啡', cals: 5 }
+  ]);
+
+  const selectedDate = ref(getLocalYYYYMMDD(new Date()));
+
+  // --- 核心逻辑 ---
+  const activeDay = computed((): DayData => {
+    if (!database.value[selectedDate.value]) {
+      // 智能继承体重
+      let defaultWeight = 70;
+      const pastDates = Object.keys(database.value).filter(d => d < selectedDate.value).sort();
+      if (pastDates.length > 0) {
+        defaultWeight = database.value[pastDates[pastDates.length - 1]].weight;
+      }
+      database.value[selectedDate.value] = { weight: defaultWeight, steps: 0, workouts: [], foods: [] };
+    }
+    return database.value[selectedDate.value];
+  });
+
+  const age = computed(() => calculateAge(userProfile.value.birthDate));
+  
+  // 当日各项指标 (调用纯函数，拒绝重复代码)
+  const bmr = computed(() => calcBMR(activeDay.value.weight, userProfile.value.heightCm, age.value, userProfile.value.gender));
+  const baseCalories = computed(() => bmr.value * 1.1);
+  const stepCalories = computed(() => calcNEAT(activeDay.value.weight, activeDay.value.steps));
+  const workoutCalories = computed(() => calcEAT(activeDay.value.workouts, activeDay.value.weight, age.value));
+  const tdee = computed(() => baseCalories.value + stepCalories.value + workoutCalories.value);
+  const totalConsumed = computed(() => activeDay.value.foods.reduce((sum, f) => sum + f.cals, 0));
+  const dailyDeficit = computed(() => tdee.value - totalConsumed.value);
+
+  // --- 方法 ---
+  const changeDate = (days: number) => {
+    const d = new Date(selectedDate.value);
+    d.setDate(d.getDate() + days);
+    selectedDate.value = getLocalYYYYMMDD(d);
+  };
+  
+  const goToToday = () => selectedDate.value = getLocalYYYYMMDD(new Date());
+
+  return {
+    userProfile, database, commonFoods, selectedDate, activeDay,
+    age, bmr, baseCalories, stepCalories, workoutCalories, tdee, totalConsumed, dailyDeficit,
+    changeDate, goToToday
+  };
+});
