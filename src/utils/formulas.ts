@@ -1,5 +1,3 @@
-import { UserProfile, DayData } from '../types';
-
 export const calculateAge = (birthDateStr: string): number => {
   const birth = new Date(birthDateStr);
   const today = new Date();
