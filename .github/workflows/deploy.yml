@@ -21,11 +21,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
 
       - name: Install and Build 🔧
+        # 这里用 install 代替 ci，因为网页端没有 lock 文件
         run: |
-          npm ci
+          npm install
           npm run build
 
       - name: Upload artifact 📡
