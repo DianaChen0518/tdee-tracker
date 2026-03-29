@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { useTdeeStore, getLocalYYYYMMDD } from './store/useTdeeStore';
 import SettingsModal from './components/SettingsModal.vue';
 import MonthlyAuditModal from './components/MonthlyAuditModal.vue';
+import { calcBMR, calcNEAT, calcEAT } from './utils/formulas'; // 引入核心公式
 import * as XLSX from 'xlsx';
 import { useDark, useToggle } from '@vueuse/core';
 
@@ -11,7 +12,7 @@ const toggleDark = useToggle(isDark);
 
 const store = useTdeeStore();
 const showSettings = ref(false);
-const showAudit = ref(false); // 新增：月度审计弹窗状态
+const showAudit = ref(false);
 
 onMounted(() => { if (!store.isConfigured) showSettings.value = true; });
 watch(() => store.isConfigured, (configured) => { if (!configured) showSettings.value = true; });
@@ -37,6 +38,13 @@ const saveQuickFood = () => {
   }
 };
 
+// 默认添加一个空运动结构
+const addWorkoutRecord = () => {
+  store.activeDay.workouts.push({
+    type: 'aerobic', hr: 0, mins: 0, secs: 0, intensity: 'med', kcal: 0
+  });
+};
+
 const showSaveToast = ref(false);
 const handleSave = () => {
   showSaveToast.value = true;
@@ -51,18 +59,18 @@ const handleDelete = () => {
 
 const exportToExcel = () => {
   const exportData = Object.entries(store.database).map(([date, data]) => {
-    const dayBmr = (10 * data.weight) + (6.25 * store.userProfile.heightCm) - (5 * store.age) + (store.userProfile.gender === 'M' ? 5 : -161);
-    const dayEat = data.workouts.reduce((t, wo) => {
-      const mins = (wo.mins || 0) + ((wo.secs || 0)/60);
-      return (wo.hr > 80 && mins > 0) ? t + Math.max(0, ((0.2017 * store.age + 0.09036 * data.weight + 0.6309 * wo.hr - 55.0969) * mins) / 4.184) : t;
-    }, 0);
-    const dayTdee = (dayBmr * 1.1) + (data.steps * 0.045 * (data.weight / 100)) + dayEat;
+    // 使用纯函数进行统一计算，拒绝重复造轮子
+    const dayBmr = calcBMR(data.weight, store.userProfile.heightCm, store.age, store.userProfile.gender);
+    const dayNeat = calcNEAT(data.weight, data.steps);
+    const dayEat = calcEAT(data.workouts, data.weight, store.age);
+    const dayTdee = (dayBmr * 1.1) + dayNeat + dayEat;
     const dayIn = data.foods.reduce((sum, f) => sum + f.cals, 0);
 
     return {
       "日期": date,
       "体重(kg)": data.weight,
       "步数": data.steps,
+      "运动消耗_EAT(kcal)": Math.round(dayEat),
       "总摄入(kcal)": Math.round(dayIn),
       "总消耗_TDEE(kcal)": Math.round(dayTdee),
       "当日缺口(kcal)": Math.round(dayTdee - dayIn)
@@ -87,7 +95,6 @@ const exportToExcel = () => {
 
     <div class="w-full max-w-[1400px]">
       
-      <!-- 头部栏 -->
       <div class="flex flex-col md:flex-row justify-between items-center mb-6 bg-white dark:bg-[#1e1e1e] p-4 rounded-2xl border border-gray-200 dark:border-[#333] shadow-sm transition-colors">
         <h1 class="text-xl font-bold flex flex-wrap items-center gap-2 mb-4 md:mb-0 text-gray-800 dark:text-white">
           📅 科学 TDEE 管理
@@ -105,7 +112,6 @@ const exportToExcel = () => {
         </div>
       </div>
 
-      <!-- 主体网格 -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
         
         <!-- 左侧：基础与运动 -->
@@ -124,18 +130,53 @@ const exportToExcel = () => {
             </div>
           </div>
 
+          <!-- 运动记录模块 -->
           <div class="bg-white dark:bg-[#1e1e1e] p-6 rounded-2xl border border-gray-200 dark:border-[#333] shadow-sm flex-1 flex flex-col transition-colors">
             <div class="flex justify-between items-center mb-4 shrink-0">
               <h2 class="text-lg font-bold text-gray-800 dark:text-white">🏋️ 运动记录</h2>
-              <button @click="store.activeDay.workouts.push({hr: 0, mins: 0, secs: 0})" class="text-xs bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-white px-3 py-1.5 rounded-md transition-colors">+ 添加</button>
+              <button @click="addWorkoutRecord" class="text-xs bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-white px-3 py-1.5 rounded-md transition-colors">+ 添加</button>
             </div>
+            
             <div class="overflow-y-auto custom-scrollbar flex-1 pr-1">
               <div v-for="(wo, i) in store.activeDay.workouts" :key="i" class="bg-gray-50 dark:bg-[#252525] p-4 rounded-lg border border-gray-200 dark:border-[#333] mb-3 relative transition-colors">
                 <button @click="store.activeDay.workouts.splice(i,1)" class="absolute top-2 right-2 text-gray-400 dark:text-gray-500 hover:text-red-500 transition-colors">✕</button>
-                <div class="grid grid-cols-3 gap-3">
-                  <div><label class="text-xs text-gray-500 dark:text-gray-400">心率(bpm)</label><input type="number" v-model.number="wo.hr" class="w-full bg-white dark:bg-[#1e1e1e] border border-gray-300 dark:border-[#444] rounded p-2 text-sm mt-1 text-gray-800 dark:text-white transition-colors"></div>
-                  <div><label class="text-xs text-gray-500 dark:text-gray-400">时长(分)</label><input type="number" v-model.number="wo.mins" class="w-full bg-white dark:bg-[#1e1e1e] border border-gray-300 dark:border-[#444] rounded p-2 text-sm mt-1 text-gray-800 dark:text-white transition-colors"></div>
-                  <div><label class="text-xs text-gray-500 dark:text-gray-400">时长(秒)</label><input type="number" v-model.number="wo.secs" class="w-full bg-white dark:bg-[#1e1e1e] border border-gray-300 dark:border-[#444] rounded p-2 text-sm mt-1 text-gray-800 dark:text-white transition-colors"></div>
+                
+                <div class="flex flex-col gap-3">
+                  <!-- 类型选择器 -->
+                  <div class="w-full pr-6">
+                    <select v-model="wo.type" class="w-full bg-white dark:bg-[#1e1e1e] border border-gray-300 dark:border-[#444] rounded-lg p-2 text-xs font-bold text-gray-800 dark:text-white transition-colors outline-none">
+                      <option value="aerobic">🏃 有氧运动 (心率计算)</option>
+                      <option value="anaerobic">🏋️ 无氧力量 (METs计算)</option>
+                      <option value="manual">⚡ 手动录入 (手环/App直出)</option>
+                    </select>
+                  </div>
+
+                  <!-- 动态输入区：有氧 -->
+                  <div v-if="!wo.type || wo.type === 'aerobic'" class="grid grid-cols-3 gap-3">
+                    <div><label class="text-xs text-gray-500 dark:text-gray-400">平均心率</label><input type="number" v-model.number="wo.hr" class="w-full bg-white dark:bg-[#1e1e1e] border border-gray-300 dark:border-[#444] rounded p-2 text-sm mt-1 text-gray-800 dark:text-white transition-colors"></div>
+                    <div><label class="text-xs text-gray-500 dark:text-gray-400">时长(分)</label><input type="number" v-model.number="wo.mins" class="w-full bg-white dark:bg-[#1e1e1e] border border-gray-300 dark:border-[#444] rounded p-2 text-sm mt-1 text-gray-800 dark:text-white transition-colors"></div>
+                    <div><label class="text-xs text-gray-500 dark:text-gray-400">时长(秒)</label><input type="number" v-model.number="wo.secs" class="w-full bg-white dark:bg-[#1e1e1e] border border-gray-300 dark:border-[#444] rounded p-2 text-sm mt-1 text-gray-800 dark:text-white transition-colors"></div>
+                  </div>
+
+                  <!-- 动态输入区：无氧 -->
+                  <div v-else-if="wo.type === 'anaerobic'" class="grid grid-cols-3 gap-3">
+                    <div>
+                      <label class="text-xs text-gray-500 dark:text-gray-400">训练强度</label>
+                      <select v-model="wo.intensity" class="w-full bg-white dark:bg-[#1e1e1e] border border-gray-300 dark:border-[#444] rounded p-2 text-sm mt-1 text-gray-800 dark:text-white transition-colors">
+                        <option value="low">低 (热身/恢复)</option>
+                        <option value="med">中 (常规增肌)</option>
+                        <option value="high">高 (大重量复合)</option>
+                      </select>
+                    </div>
+                    <div><label class="text-xs text-gray-500 dark:text-gray-400">时长(分)</label><input type="number" v-model.number="wo.mins" class="w-full bg-white dark:bg-[#1e1e1e] border border-gray-300 dark:border-[#444] rounded p-2 text-sm mt-1 text-gray-800 dark:text-white transition-colors"></div>
+                    <div><label class="text-xs text-gray-500 dark:text-gray-400">时长(秒)</label><input type="number" v-model.number="wo.secs" class="w-full bg-white dark:bg-[#1e1e1e] border border-gray-300 dark:border-[#444] rounded p-2 text-sm mt-1 text-gray-800 dark:text-white transition-colors"></div>
+                  </div>
+
+                  <!-- 动态输入区：手动 -->
+                  <div v-else-if="wo.type === 'manual'" class="w-full">
+                    <label class="text-xs text-gray-500 dark:text-gray-400">直接填入手环/App显示的消耗热量 (kcal)</label>
+                    <input type="number" v-model.number="wo.kcal" class="w-full bg-white dark:bg-[#1e1e1e] border border-gray-300 dark:border-[#444] rounded p-2 text-sm mt-1 text-gray-800 dark:text-white transition-colors">
+                  </div>
                 </div>
               </div>
               <div v-if="store.activeDay.workouts.length === 0" class="text-gray-400 dark:text-gray-500 text-sm text-center py-4">当日无运动记录</div>
@@ -163,7 +204,6 @@ const exportToExcel = () => {
             <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">快捷食物库：</p>
             <div class="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto custom-scrollbar pr-1">
               <div v-for="(f, i) in store.commonFoods" :key="i" class="flex items-center bg-gray-100 dark:bg-[#2c2c2c] border border-gray-300 dark:border-[#444] rounded-full overflow-hidden transition-colors">
-                <!-- 修复：补上了 kcal 单位 -->
                 <button @click="store.activeDay.foods.push({name: f.name, cals: f.cals})" class="text-xs px-2.5 py-1 hover:bg-gray-200 dark:hover:bg-[#3c3c3c] text-gray-700 dark:text-gray-200 transition-colors">
                   {{ f.name }} ({{ Math.round(f.cals) }} kcal)
                 </button>
@@ -229,7 +269,6 @@ const exportToExcel = () => {
       </div>
     </div>
     
-    <!-- 弹窗组件 -->
     <SettingsModal v-if="showSettings" @close="showSettings = false" />
     <MonthlyAuditModal v-if="showAudit" @close="showAudit = false" />
   </div>
