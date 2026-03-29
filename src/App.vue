@@ -62,7 +62,7 @@ const exportToExcel = () => {
     // 使用纯函数进行统一计算，拒绝重复造轮子
     const dayBmr = calcBMR(data.weight, store.userProfile.heightCm, store.age, store.userProfile.gender);
     const dayNeat = calcNEAT(data.weight, data.steps);
-    const dayEat = calcEAT(data.workouts, data.weight, store.age);
+    const dayEat = calcEAT(data.workouts, data.weight, store.age, store.userProfile.gender);
     const dayTdee = (dayBmr * 1.1) + dayNeat + dayEat;
     const dayIn = data.foods.reduce((sum, f) => sum + f.cals, 0);
 
