@@ -5,9 +5,12 @@ export interface UserProfile {
 }
 
 export interface Workout {
-  hr: number;
-  mins: number;
-  secs: number;
+  type?: 'aerobic' | 'anaerobic' | 'manual'; // 兼容旧数据，可选
+  hr?: number;
+  mins?: number;
+  secs?: number;
+  intensity?: 'low' | 'med' | 'high'; // 无氧强度
+  kcal?: number; // 手动输入的热量
 }
 
 export interface Food {
