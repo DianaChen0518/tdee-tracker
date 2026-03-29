@@ -18,7 +18,7 @@ const monthlyRecords = computed(() => {
       // 严谨计算历史那一天的真实数据
       const bmr = calcBMR(data.weight, store.userProfile.heightCm, store.age, store.userProfile.gender);
       const neat = calcNEAT(data.weight, data.steps);
-      const eat = calcEAT(data.workouts, data.weight, store.age);
+      const eat = calcEAT(data.workouts, data.weight, store.age, store.userProfile.gender);
       const tdee = (bmr * 1.1) + neat + eat;
       const intake = data.foods.reduce((sum, f) => sum + f.cals, 0);
       const deficit = tdee - intake;
