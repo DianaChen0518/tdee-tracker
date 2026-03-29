@@ -47,7 +47,10 @@ export const useTdeeStore = defineStore('tdee', () => {
   const bmr = computed(() => calcBMR(activeDay.value.weight, userProfile.value.heightCm, age.value, userProfile.value.gender));
   const baseCalories = computed(() => bmr.value * 1.1);
   const stepCalories = computed(() => calcNEAT(activeDay.value.weight, activeDay.value.steps));
-  const workoutCalories = computed(() => calcEAT(activeDay.value.workouts, activeDay.value.weight, age.value));
+  
+  // 修正：调用 calcEAT 时传入性别
+  const workoutCalories = computed(() => calcEAT(activeDay.value.workouts, activeDay.value.weight, age.value, userProfile.value.gender));
+  
   const tdee = computed(() => baseCalories.value + stepCalories.value + workoutCalories.value);
   const totalConsumed = computed(() => activeDay.value.foods.reduce((sum, f) => sum + f.cals, 0));
   const dailyDeficit = computed(() => tdee.value - totalConsumed.value);
@@ -60,7 +63,6 @@ export const useTdeeStore = defineStore('tdee', () => {
   
   const goToToday = () => selectedDate.value = getLocalYYYYMMDD(new Date());
 
-  // 新增：清空当前选定日期的数据
   const clearDayData = () => {
     database.value[selectedDate.value] = { weight: 0, steps: 0, workouts: [], foods: [] };
   };
